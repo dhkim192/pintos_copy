@@ -39,6 +39,7 @@ struct condition
 void cond_init (struct condition *);
 void cond_wait (struct condition *, struct lock *);
 void cond_signal (struct condition *, struct lock *);
+bool sema_check_priority(struct list_elem * check_list1, struct list_elem * check_list2);
 void cond_broadcast (struct condition *, struct lock *);
 
 /* Optimization barrier.

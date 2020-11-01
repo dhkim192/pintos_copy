@@ -17,6 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -29,6 +30,8 @@ tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
+  char * require_file_name;
+  char * ptr;
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
@@ -38,8 +41,11 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  require_file_name = strtok_r(file_name, " ", &ptr);
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (require_file_name, PRI_DEFAULT, start_process, fn_copy);
+
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -51,20 +57,73 @@ static void
 start_process (void *file_name_)
 {
   char *file_name = file_name_;
+  char * require_file_name;
+  char * ptr;
   struct intr_frame if_;
   bool success;
+
+  require_file_name = strtok_r(file_name, " ", &ptr);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = load (require_file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
+  //palloc_free_page (file_name);
   if (!success) 
     thread_exit ();
+  else {
+    int argc = 0;
+    int flag = 0;
+    int ret = 0;
+
+    char * temp1 = strtok_r(file_name, " ", &ptr);
+    while (1) {
+      if (temp1 == NULL) {
+	break;
+      }
+      temp1 = strtok_r(NULL, " ", &ptr);
+      argc++;
+    }
+
+    int address[argc];
+    char * temp2 = strtok_r(file_name, " ", &ptr);
+    while (1) {
+      if (temp2 == NULL) {
+        break;
+      }
+      if_.esp = if_.esp - strlen(temp2) + 1;
+      address[flag] = if_.esp;
+      memcpy(if_.esp, temp2, strlen(temp2) + 1);
+      temp2 = strtok_r(NULL, " ", &ptr);
+      flag++;
+    }
+
+    while((int)if_.esp % 4 != 0) {
+      if_.esp--;
+    }
+
+    if_.esp = if_.esp - 4;
+    memcpy(if_.esp, &ret, 4);
+
+    for (int k = argc - 1; k >= 0; k--) {
+      if_.esp = if_.esp - 4;
+      memcpy(if_.esp, &address[k], 4);
+    }
+
+    if_.esp = if_.esp - 4;
+    int argv = if_.esp + 4;
+    memcpy(if_.esp, &argv, 4);
+
+    if_.esp = if_.esp - 4;
+    memcpy(if_.esp, &argc, 4);
+    
+    if_.esp = if_.esp - 4;
+    memcpy(if_.esp, &ret, 4);
+  }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -88,6 +147,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  timer_sleep (TIMER_FREQ * 10);
   return -1;
 }
 
